@@ -28,6 +28,8 @@ model User {
   connections Connection[]
   passkey     Passkey[]
   gameHistory Game[]
+  sentInvites GameInvite[] @relation("SentInvites")
+  receivedInvites GameInvite[] @relation("ReceivedInvites")
 }
 
 model Note {
@@ -204,4 +206,23 @@ model Game {
   updatedAt DateTime @updatedAt
 
   @@index([createdAt])
+}
+
+model GameInvite {
+  id String @id @default(cuid())
+
+  from User @relation("SentInvites", fields: [fromId], references: [id], onDelete: Cascade)
+  fromId String
+
+  to User @relation("ReceivedInvites", fields: [toId], references: [id], onDelete: Cascade)
+  toId String
+
+  status String @default("pending") // pending, accepted, rejected, cancelled
+  message String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([toId, status])
+  @@index([fromId])
 }

@@ -10,6 +10,7 @@ import rateLimit from 'express-rate-limit'
 import getPort, { portNumbers } from 'get-port'
 import morgan from 'morgan'
 import { type ServerBuild } from 'react-router'
+import { sseManager } from './utils/sse-manager.js'
 
 const MODE = process.env.NODE_ENV ?? 'development'
 const IS_PROD = MODE === 'production'
@@ -196,6 +197,50 @@ if (!ALLOW_INDEXING) {
 		next()
 	})
 }
+
+// SSE endpoint for notifications
+app.get('/api/notifications/stream', (req, res) => {
+	// Get userId from session or auth header
+	const userId = req.headers['x-user-id'] as string
+
+	if (!userId) {
+		res.status(401).json({ error: 'Unauthorized' })
+		return
+	}
+
+	// Set headers for SSE
+	res.setHeader('Content-Type', 'text/event-stream')
+	res.setHeader('Cache-Control', 'no-cache')
+	res.setHeader('Connection', 'keep-alive')
+	res.setHeader('X-Accel-Buffering', 'no') // Disable buffering in nginx
+
+	// Generate client ID
+	const clientId = `${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+	// Send initial connection message
+	res.write(`data: ${JSON.stringify({ type: 'connected', clientId })}\n\n`)
+
+	// Add client to manager
+	sseManager.addClient(userId, clientId, res)
+
+	// Handle client disconnect
+	req.on('close', () => {
+		sseManager.removeClient(userId, clientId)
+	})
+})
+
+// Endpoint to send notifications
+app.post('/api/notifications/send', express.json(), (req, res) => {
+	const { userId, event } = req.body
+
+	if (!userId || !event) {
+		res.status(400).json({ error: 'Missing userId or event' })
+		return
+	}
+
+	sseManager.sendToUser(userId, event)
+	res.json({ success: true })
+})
 
 app.all(
 	'*',
